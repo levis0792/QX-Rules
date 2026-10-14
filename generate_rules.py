@@ -87,7 +87,9 @@ EXTRA_RULES = {
 # ===========================================================================
 # ④ 输出风格（想改格式改这里）
 # ===========================================================================
-ADD_HEADER = False   # True: 在 .conf 顶部加几行 # 注释（名称/来源/生成时间）
+# 文件顶部加几行 # 注释(名称/脚本/更新时间/规则数)。QX 认 # 注释,
+# 主流规则库(blackmatrix7)也这么写; 英文文件名看不出内容, 靠这里认。
+ADD_HEADER = True
 MITM_APPEND = False  # True: 生成 "hostname = %APPEND% ..."（远程资源想追加而不是覆盖时用）
 KEEP_LAST_GOOD = True  # 抓取失败时保留上一次生成的文件
 WRITE_README = False  # False: 脚本完全不碰 README.md（你想写什么就写什么，不会被覆盖）
@@ -227,6 +229,18 @@ def fetch(url):
 # ---------------------------------------------------------------------------
 # 解析脚本头部
 # ---------------------------------------------------------------------------
+def looks_like_js(text):
+    """区分"QX 脚本 .js" 和 "裸格式 .conf 资源", 后者才需要按裸规则扫描。"""
+    if text.lstrip().startswith("{") or re.match(r"^\s*/\*", text[:60000], re.S):
+        return True
+    return any(token in text for token in ("$done", "$response", "$request", "function(", "=>"))
+
+
+def hosts_from_value(value):
+    value = re.sub(r"^%APPEND%\s*", "", value, flags=re.I)
+    return {item.strip() for item in re.split(r"[,\s]+", value) if item.strip()}
+
+
 def split_sections(comment):
     """把 /* ... */ 头部注释拆成 {段名: [规则行]}；[Script] 视同 [rewrite_local]。"""
     sections = {}
@@ -305,6 +319,21 @@ def parse_script(text):
         extra = find_section_anywhere(text, "mitm")
         if extra:
             sections["mitm"] = extra
+    if not sections.get("rewrite_local") and not looks_like_js(text):
+        # 裸格式资源：QX 官方 sample-import-rewrite.snippet、blackmatrix7 的
+        # QuantumultX/Advertising.conf、ddgksf2013 的 EmbyPlugin.conf 都是这种写法,
+        # 文件里直接就是规则行, 没有 [段名]。
+        bare = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped[:1] in "#;/":
+                continue
+            if re.match(r"^hostname\s*=", stripped, re.I):
+                continue
+            if " url " in stripped and RE_RULE.match(stripped):
+                bare.append(stripped)
+        if bare:
+            sections["rewrite_local"] = bare
 
     rules, hosts = [], set()
     for name in ("rewrite_local", "rewrite_remote"):
@@ -324,11 +353,11 @@ def parse_script(text):
         found = re.match(r"^hostname\s*=\s*(?P<value>.+)$", line.strip(), re.I)
         if not found:
             continue
-        value = re.sub(r"^%APPEND%\s*", "", found.group("value"), flags=re.I)
-        for item in re.split(r"[,\s]+", value):
-            item = item.strip().strip(".")
-            if item:
-                hosts.add(item)
+        hosts |= {item.strip().strip(".") for item in hosts_from_value(found.group("value"))}
+    for line in text.splitlines():  # 裸格式里的 hostname 行
+        found = re.match(r"^\s*hostname\s*=\s*(?P<value>.+)$", line, re.I)
+        if found:
+            hosts |= {item.strip().strip(".") for item in hosts_from_value(found.group("value"))}
     return rules, hosts, sections
 
 
@@ -336,25 +365,27 @@ def parse_script(text):
 # 生成 .conf
 # ---------------------------------------------------------------------------
 def build_conf(name, url, rules, hosts, extra_note=""):
+    """
+    远程重写资源文件里不能有 [general] / [rewrite_local] / [mitm] 段头,
+    只能是"裸规则 + 一行 hostname = ..."。参照 QX 官方 sample-import-rewrite.snippet
+    和 blackmatrix7/ios_rule_script 的 QuantumultX/Advertising.conf。
+    """
     lines = []
     if ADD_HEADER:
         lines += [
-            "# " + "=" * 60,
-            f"# 名称：{name}",
-            f"# 脚本：{url}",
-            f"# 生成：{cn_now():%Y-%m-%d %H:%M:%S} · generate_rules.py v{VERSION}",
-            "# 用法：QuantumultX → 配置文件 → 重写 → 引用 本文件远程地址",
+            f"# NAME: {name}",
+            f"# SCRIPT: {url}",
+            f"# RULES: {len(rules)}",
+            f"# MITM: {len(hosts)}",
         ]
         if extra_note:
-            lines.append(f"# 备注：{extra_note}")
-        lines += ["# " + "=" * 60, ""]
-    # 注意：远程重写资源里不能出现 [general]，否则 QX 会报 invalid [general]
-    lines += ["[rewrite_local]"]
+            lines.append(f"# NOTE: {extra_note}")
+        lines.append("")
     lines += rules
-    lines += ["", "[mitm]"]
+    lines.append("")
     prefix = "%APPEND% " if MITM_APPEND else ""
     lines.append(f"hostname = {prefix}" + ", ".join(sorted(hosts)))
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def conf_has_rules(path):
@@ -365,8 +396,7 @@ def conf_has_rules(path):
             text = fh.read()
     except OSError:
         return False
-    body = text.split("[mitm]")[0]
-    return any(ln.strip() and not ln.strip().startswith("#") and " url " in ln for ln in body.splitlines())
+    return any(ln.strip() and not ln.strip().startswith("#") and " url " in ln for ln in text.splitlines())
 
 
 def clean_stale(keep):
@@ -396,29 +426,23 @@ def read_conf(path):
     rules, hosts = [], set()
     if not os.path.isfile(path):
         return rules, hosts
-    section = ""
     with open(path, "r", encoding="utf-8") as fh:
         for line in fh:
             stripped = line.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                section = stripped.strip("[]").lower()
-                continue
             if not stripped or stripped.startswith("#"):
                 continue
-            if section == "rewrite_local" and " url " in stripped:
-                if stripped not in rules:
-                    rules.append(stripped)
-            elif section == "mitm":
-                found = re.match(r"^hostname\s*=\s*(.+)$", stripped, re.I)
-                if found:
-                    value = re.sub(r"^%APPEND%\s*", "", found.group(1), flags=re.I)
-                    hosts |= {item.strip() for item in re.split(r"[,\s]+", value) if item.strip()}
+            found = re.match(r"^hostname\s*=\s*(.+)$", stripped, re.I)
+            if found:
+                value = re.sub(r"^%APPEND%\s*", "", found.group(1), flags=re.I)
+                hosts |= {item.strip() for item in re.split(r"[,\s]+", value) if item.strip()}
+            elif " url " in stripped and stripped not in rules:
+                rules.append(stripped)
     return rules, hosts
 
 
 def build_allinone(entries):
     """entries: [(中文名, 文件名, 规则列表, 域名集合), ...]"""
-    lines = ["[rewrite_local]"]  # 远程重写资源不能有 [general]
+    lines = ["# NAME: allinone（全部脚本合集）", ""]
     seen, all_hosts, total = set(), set(), 0
     for cn_name, filename, rules, hosts in entries:
         fresh = [rule for rule in rules if rule not in seen]
@@ -431,10 +455,9 @@ def build_allinone(entries):
             total += 1
         lines.append("")
         all_hosts |= hosts
-    lines.append("[mitm]")
     prefix = "%APPEND% " if MITM_APPEND else ""
     lines.append(f"hostname = {prefix}" + ", ".join(sorted(all_hosts)))
-    return "\n".join(lines) + "\n", total
+    return "\n".join(lines).rstrip() + "\n", total
 
 
 def update_readme(urls, notes):
