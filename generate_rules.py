@@ -94,6 +94,12 @@ EXTRA_RULES = {
         r"^https?://updatepage\.kuwo\.cn/ url reject-200",
         r"^https?://wa\.kuwo\.cn/ url reject-200",
         r"^https?://webstat\.kuwo\.cn/ url reject-200",
+        # SVIP 解锁：脚本自带的规则是"精确路径"，App 一更新路径就可能落空。
+        # 这里放宽到"接口前缀"，仍然交给同一个解锁脚本处理，兜住版本漂移。
+        r"^https?://vip1\.kuwo\.cn/vip/ url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js",
+        r"^https?://appi\.kuwo\.cn/kuwopay/ url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js",
+        r"^https?://musicpay\.kuwo\.cn/ url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js",
+        r"^https?://.*\.kuwo\.cn/v\d/api/pay/ url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js",
     ],
 }
 
