@@ -1,0 +1,35 @@
+name: Auto Generate QX Rules
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: # 允许你在网页上点击按钮一键运行
+  schedule:
+    - cron: '0 0 * * *' # 每天定时运行一次
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: 迁出代码仓库
+      uses: actions/checkout@v4
+
+    - name: 设置 Python 环境
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: 运行中文命名解包脚本
+      run: |
+        python generate_rules.py
+
+    - name: 自动提交并推送生成的 .conf 文件
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add *.conf
+        git diff --staged --quiet || git commit -m "🤖 自动云端解包并更新中文 .conf 规则文件"
+        git push
