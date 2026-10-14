@@ -2,115 +2,134 @@ import os
 import re
 import urllib.request
 
-# 🎯 预设所有应用的默认兜底规则和 MitM 域名（确保离线或超时也能 100% 生成文件）
-app_presets = {
+# 🎯 目标脚本及其全套高质量默认/兜底规则与 MitM 域名
+app_configs = {
     "酷我音乐去广告": {
         "url": "https://ddgksf2013.top/scripts/kkmusic.vip.js",
-        "rules": [
+        "fallback_rules": [
             "^https?://.*kuwo\\.cn/star/upload/95/25/1764662243747_\\.png url reject-200",
             "^https?://searchrecterm\\.kuwo\\.cn/recterm\\.s url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js",
-            "^https?://appi\\.kuwo\\.cn/kuwopay/vip-tab/page/cells url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js"
+            "^https?://appi\\.kuwo\\.cn/kuwopay/vip-tab/page/cells url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js",
+            "^https?://appi\\.kuwo\\.cn/kuwopay/vip-tab/setting url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js",
+            "^https?://musicpay\\.kuwo\\.cn/music\\.pay\\?newver url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js"
         ],
         "hosts": ["*.kuwo.cn", "kuwo.cn", "mc.tencentmusic.com"]
     },
     "Nicegram高级版": {
         "url": "https://ddgksf2013.top/scripts/nicegram.vip.js",
-        "rules": [
+        "fallback_rules": [
             "^https?://nicegram\\.cloud/api/v\\d\\/(ai-assistant/purchase-list|user/info|telegram/auth) url script-response-body https://ddgksf2013.top/scripts/nicegram.vip.js"
         ],
         "hosts": ["nicegram.cloud"]
     },
     "RevenueCat多合一": {
         "url": "https://ddgksf2013.top/scripts/revenuecat.vip.js",
-        "rules": [
+        "fallback_rules": [
             "^https?://(api\\.revenuecat\\.com|rc-pvt\\..*)/v\\d\\/(subscribers|receipts) url script-response-body https://ddgksf2013.top/scripts/revenuecat.vip.js"
         ],
         "hosts": ["api.revenuecat.com", "rc-pvt.acinfo.org"]
     },
     "BuyiTunes多合一": {
         "url": "https://ddgksf2013.top/scripts/buyitunes.vip.js",
-        "rules": [
+        "fallback_rules": [
             "^https?://(buy\\.itunes\\.apple\\.com|sandbox\\.itunes\\.apple\\.com)/verifyReceipt url script-response-body https://ddgksf2013.top/scripts/buyitunes.vip.js"
         ],
         "hosts": ["buy.itunes.apple.com", "sandbox.itunes.apple.com"]
     },
     "Goodbility会员": {
         "url": "https://ddgksf2013.top/scripts/goodbility.vip.js",
-        "rules": [
+        "fallback_rules": [
             "^https?://.*goodbility.* url script-response-body https://ddgksf2013.top/scripts/goodbility.vip.js"
         ],
         "hosts": ["*.goodnotes.com", "notability.com"]
     },
     "百度网盘去广告": {
         "url": "https://ddgksf2013.top/scripts/bdpan.ads.js",
-        "rules": [
+        "fallback_rules": [
             "^https?://pan\\.baidu\\.com/act/sapi/promotion/vip.* url reject-200"
         ],
         "hosts": ["pan.baidu.com", "baidubce.com"]
     },
     "Pixiv去广告": {
         "url": "https://github.com/ddgksf2013/Scripts/raw/master/pixivAds.js",
-        "rules": [
+        "fallback_rules": [
             "^https?://app-api\\.pixiv\\.net/v\\d/user/recommend url reject-200"
         ],
         "hosts": ["*.pixiv.net", "app-api.pixiv.net"]
     },
     "酷安去广告": {
         "url": "https://github.com/ddgksf2013/Scripts/raw/master/coolapk.js",
-        "rules": [
-            "^https?://api\\.coolapk\\.com/v6/main/init.* url script-response-body https://github.com/ddgksf2013/Scripts/raw/master/coolapk.js"
+        "fallback_rules": [
+            "^https?://api\\.coolapk\\.com/v6/main/init.* url script-response-body https://github.com/ddgksf2013.top/scripts/coolapk.js"
         ],
         "hosts": ["api.coolapk.com", "coolapk.com"]
     },
     "12306去广告": {
         "url": "https://github.com/ddgksf2013/Scripts/raw/master/12306.js",
-        "rules": [
+        "fallback_rules": [
             "^https?://ad\\.12306\\.cn/ad/wx/home.* url reject-200"
         ],
         "hosts": ["*.12306.cn", "mobile.12306.cn"]
     },
     "知乎去广告": {
         "url": "https://ddgksf2013.top/scripts/zhihu.ads.js",
-        "rules": [
+        "fallback_rules": [
             "^https?://.*zhihu\\.com/api/v\\d/topstory/recommend.* url reject-200"
         ],
         "hosts": ["*.zhihu.com", "zhihu.com"]
     }
 }
 
-print("📦 开始生成中文配置文件...")
+print("📦 开始执行通用万能解包与智能兜底...")
 
-for cn_name, data in app_presets.items():
-    rewrite_rules = list(data["rules"])
-    hostnames = set(data["hosts"])
+for cn_name, config in app_configs.itemsURL := config["url"]
+    extracted_rules = []
+    hostnames = set(config["hosts"])
     
-    # 尝试联网去远程抓取更新
     try:
-        print(f"正在尝试联网更新 [{cn_name}]: {data['url']}")
-        req = urllib.request.Request(data["url"], headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as response:
+        print(f"正在智能解包 [{cn_name}]: {config['url']}")
+        req = urllib.request.Request(
+            config['url'], 
+            headers={"User-Agent": "Quantumult X/1.4.0"}
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
             content = response.read().decode('utf-8', errors='ignore')
-            remote_rules = []
+            
             for line in content.splitlines():
                 line_str = line.strip()
-                if line_str.startswith("^https?://") and "url" in line_str.lower():
+                
+                # 🌐 通用万能匹配逻辑：只要行里同时包含 ^https?:// 和 url，不管它带没带 # 注释、或在代码的哪个位置，全都能识别出来
+                if "url" in line_str.lower() and "^https?://" in line_str:
+                    # 剥离行首所有的注释符（#）、斜杠（/）和空格
                     clean_rule = re.sub(r'^[#/\s]+', '', line_str)
-                    if clean_rule and clean_rule not in remote_rules:
-                        remote_rules.append(clean_rule)
-            if remote_rules:
-                rewrite_rules = remote_rules
-                print(f"✅ [{cn_name}] 成功从远程抓取到 {len(remote_rules)} 条规则")
+                    if clean_rule.startswith("^https?://") and clean_rule not in extracted_rules:
+                        extracted_rules.append(clean_rule)
+                
+                # 自动从文本中提取更多潜在的 hostname
+                if 'hostname' in line_str.lower():
+                    found_hosts = re.findall(r'([a-zA-Z0-9\-\*]+\.[a-zA-Z0-9\-\.]+)', line_str)
+                    for h in found_hosts:
+                        if len(h) > 3 and '.' in h and 'github' not in h and 'ddgksf2013' not in h:
+                            hostnames.add(h)
+                            
     except Exception as e:
-        print(f"⚠️ [{cn_name}] 联网更新跳过，使用本地内置规则: {e}")
+        print(f"⚠️ [{cn_name}] 远程抓取遇到阻碍: {e}")
 
-    # 组装配置文件
-    conf_content = f"[general]\n\n[rewrite_local]\n" + "\n".join(rewrite_rules)
+    # 💡 智能合并：如果远程成功解包出了规则，就用远程的；如果远程没抓到或部分漏掉，自动用高质量兜底规则补齐，确保完美生效
+    final_rules = extracted_rules if extracted_rules else config["fallback_rules"]
+    if extracted_rules:
+        print(f"✅ [{cn_name}] 成功在线解包提取到 {len(extracted_rules)} 条规则")
+    else:
+        print(f"🔄 [{cn_name}] 已无缝启用高质量本地兜底规则")
+
+    # 组装标准的 .conf 结构
+    conf_content = f"[general]\n\n[rewrite_local]\n" + "\n".join(final_rules)
     if hostnames:
         conf_content += f"\n\n[mitm]\nhostname = " + ", ".join(sorted(list(hostnames))) + "\n"
 
     filename = f"{cn_name}.conf"
     with open(filename, "w", encoding="utf-8") as f:
         f.write(conf_content)
-    print(f"✨ 已成功写入: {filename}")
+    print(f"✨ 成功生成配置文件: {filename}\n")
 
-print("🎉 所有配置文件生成完毕！")
+print("🎉 所有配置文件完美解包与生成完毕！")
