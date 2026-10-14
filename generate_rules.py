@@ -16,6 +16,7 @@ QX-Rules · 把 QX 脚本自动"解包"成中文 .conf
   4. [mitm] 缺域名时，从重写规则里反推 (^https?:\\/\\/.*\\.kuwo\\.cn\\/... → *.kuwo.cn)，
      再并上你原来手写的域名(EXTRA_HOSTS)，不会丢。
   5. 抓取失败时**保留上一次生成的 .conf**，绝不把好文件覆盖成空文件。
+  6. 生成的文件名全英文(如 coolapk-adblock.conf)，URL 里不会出现中文/百分号编码。
 
 本地运行：python generate_rules.py
 云端运行：.github/workflows/auto_update.yml 已经在跑，不需要改。
@@ -37,46 +38,48 @@ from datetime import datetime, timedelta, timezone
 VERSION = "2.0.0"
 
 # ===========================================================================
-# ① 要转换的脚本：中文文件名 -> 脚本链接
-#    文件名保持不变，就不会在仓库里多出重复文件
+# ① 要转换的脚本
+#    key   = 生成的文件名, 必须全英文/数字/连字符 —— 它会出现在 URL 里,
+#            中文路径(带 %E9%85%B7 这种)客户端不认, 所以这里不能写中文
+#    value = (中文名, 脚本链接)   中文名只用在运行日志里, 不参与文件名和 URL
 # ===========================================================================
 APPS = {
-    "酷我音乐去广告": "https://ddgksf2013.top/scripts/kkmusic.vip.js",
-    "酷安去广告": "https://github.com/ddgksf2013/Scripts/raw/master/coolapk.js",
-    "12306去广告": "https://github.com/ddgksf2013/Scripts/raw/master/12306.js",
-    "知乎去广告": "https://ddgksf2013.top/scripts/zhihu.ads.js",
-    "Nicegram高级版": "https://ddgksf2013.top/scripts/nicegram.vip.js",
-    "RevenueCat多合一": "https://ddgksf2013.top/scripts/revenuecat.vip.js",
-    "BuyiTunes多合一": "https://ddgksf2013.top/scripts/buyitunes.vip.js",
-    "百度网盘去广告": "https://ddgksf2013.top/scripts/bdpan.ads.js",
-    "Goodbility会员": "https://ddgksf2013.top/scripts/goodbility.vip.js",
-    "Pixiv去广告": "https://github.com/ddgksf2013/Scripts/raw/master/pixivAds.js",
-    "皮皮虾去广告": "https://gist.githubusercontent.com/ddgksf2013/bb1dadbd32f67c68772caebcc70b0a33/raw/pipixia.adblock.js",
+    "kuwo-adblock":     ("酷我音乐去广告", "https://ddgksf2013.top/scripts/kkmusic.vip.js"),
+    "coolapk-adblock":  ("酷安去广告", "https://github.com/ddgksf2013/Scripts/raw/master/coolapk.js"),
+    "12306-adblock":    ("12306去广告", "https://github.com/ddgksf2013/Scripts/raw/master/12306.js"),
+    "zhihu-adblock":    ("知乎去广告", "https://ddgksf2013.top/scripts/zhihu.ads.js"),
+    "nicegram-premium": ("Nicegram高级版", "https://ddgksf2013.top/scripts/nicegram.vip.js"),
+    "revenuecat":       ("RevenueCat多合一", "https://ddgksf2013.top/scripts/revenuecat.vip.js"),
+    "buyitunes":        ("BuyiTunes多合一", "https://ddgksf2013.top/scripts/buyitunes.vip.js"),
+    "baidupan-adblock": ("百度网盘去广告", "https://ddgksf2013.top/scripts/bdpan.ads.js"),
+    "goodbility":       ("Goodbility会员", "https://ddgksf2013.top/scripts/goodbility.vip.js"),
+    "pixiv-adblock":    ("Pixiv去广告", "https://github.com/ddgksf2013/Scripts/raw/master/pixivAds.js"),
+    "pipixia-adblock":  ("皮皮虾去广告", "https://gist.githubusercontent.com/ddgksf2013/bb1dadbd32f67c68772caebcc70b0a33/raw/pipixia.adblock.js"),
 }
 
 # ===========================================================================
 # ② 你原来手写的 [mitm] 域名：脚本头部里没有的会被保留下来
 # ===========================================================================
 EXTRA_HOSTS = {
-    "酷我音乐去广告": ["kuwo.cn"],
-    "酷安去广告": ["coolapk.com"],
-    "12306去广告": ["*.12306.cn", "mobile.12306.cn"],
-    "知乎去广告": ["*.zhihu.com", "zhihu.com"],
-    "百度网盘去广告": ["baidubce.com"],
-    "Goodbility会员": ["*.goodnotes.com"],
-    "Pixiv去广告": ["*.pixiv.net", "app-api.pixiv.net"],
-    "RevenueCat多合一": ["rc-pvt.acinfo.org"],
-    "BuyiTunes多合一": ["sandbox.itunes.apple.com"],
+    "kuwo-adblock": ["kuwo.cn"],
+    "coolapk-adblock": ["coolapk.com"],
+    "12306-adblock": ["*.12306.cn", "mobile.12306.cn"],
+    "zhihu-adblock": ["*.zhihu.com", "zhihu.com"],
+    "baidupan-adblock": ["baidubce.com"],
+    "goodbility": ["*.goodnotes.com"],
+    "pixiv-adblock": ["*.pixiv.net", "app-api.pixiv.net"],
+    "revenuecat": ["rc-pvt.acinfo.org"],
+    "buyitunes": ["sandbox.itunes.apple.com"],
 }
 
 # ===========================================================================
 # ③ 你原来手写的重写规则：脚本头部里没有的会被保留下来
 # ===========================================================================
 EXTRA_RULES = {
-    "Pixiv去广告": [
+    "pixiv-adblock": [
         r"^https?://app-api\.pixiv\.net/v\d/user/recommend url reject-200",
     ],
-    "12306去广告": [
+    "12306-adblock": [
         r"^https?://ad\.12306\.cn/ad/wx/home.* url reject-200",
     ],
 }
@@ -87,37 +90,25 @@ EXTRA_RULES = {
 ADD_HEADER = False   # True: 在 .conf 顶部加几行 # 注释（名称/来源/生成时间）
 MITM_APPEND = False  # True: 生成 "hostname = %APPEND% ..."（远程资源想追加而不是覆盖时用）
 KEEP_LAST_GOOD = True  # 抓取失败时保留上一次生成的文件
+WRITE_README = False  # False: 脚本完全不碰 README.md（你想写什么就写什么，不会被覆盖）
 
 # 生成的 .conf 统一放这个文件夹里, 文件夹内只会出现生成的 .conf, 不掺别的东西
 CONF_DIR = "conf"
 # 老版本在仓库根目录生成的同名 .conf: 新位置生成成功后自动删掉, 免得两处重复
 CLEAN_LEGACY_ROOT_CONFS = True
 
+# 额外生成 conf/allinone.conf：把 11 个脚本的规则合并成一份, QX 里只引一条即可
+MAKE_ALLINONE = True
+ALLINONE_FILE = "allinone"
+
 # 你自己的仓库地址（README 表格里会生成"一键引入地址"，填错会导致链接点不开）
 REPO_RAW = "https://raw.githubusercontent.com/levis0792/QX-Rules/main"
 
-# README.md 的固定说明部分（表格由脚本自动维护在 AUTO 标记之间）
+# README.md 的说明部分（整个 README 由脚本生成, 想改文案就改这里）
 README_INTRO = """# QX-Rules
 
-把 [ddgksf2013](https://github.com/ddgksf2013) 等作者的 Quantumult X 脚本，
-自动"解包"成中文名 `.conf` 重写配置，每天云端自动更新。
-
-## 怎么用
-
-Quantumult X → 配置文件 → 重写 → 引用 → 添加，把下表里的**原始地址**整条粘进去即可。
-
-## 自动更新
-
-- `.github/workflows/auto_update.yml`：每天 00:00(UTC) 自动跑一次，也可以在 Actions 页手动触发
-- `generate_rules.py`：抓取脚本头部注释里的 `[rewrite_local]` / `[mitm]` 生成配置
-- 这类站点只对代理客户端 UA 返回脚本内容（浏览器直接打开会被 302 跳回首页，看着像失效），
-  脚本已按 Quantumult X → Loon → Shadowrocket → Surge → 浏览器 的顺序自动重试
-- 抓取失败时**保留上一次生成的结果**，不会把好配置覆盖成空文件
-
-## 免责声明
-
-所有脚本内容版权归原作者所有，本仓库只做格式转换，仅供学习交流，请勿用于商业用途。
-"""
+QuantumultX 重写配置，脚本自动解包生成，每天云端自动更新。
+用法：Quantumult X → 配置文件 → 重写 → 引用 → 添加，粘贴下面任一条地址。"""
 
 # 站点只认代理客户端 UA；浏览器/curl 会被 302 到首页
 USER_AGENTS = [
@@ -399,35 +390,72 @@ def clean_stale(keep):
                 pass
 
 
-def update_readme(rows):
-    begin, end = "<!-- AUTO:BEGIN -->", "<!-- AUTO:END -->"
-    table = ["| 中文配置 | 状态 | 规则数 | MitM 域名 | 一键引入地址（原始地址） |",
-             "|---|---|---|---|---|"]
-    table += rows
-    block = begin + "\n\n" + "\n".join(table) + "\n\n" + end + "\n"
-    text = ""
-    if os.path.isfile("README.md"):
-        with open("README.md", "r", encoding="utf-8") as fh:
-            text = fh.read()
-    if begin in text and end in text:
-        text = re.sub(re.escape(begin) + r".*?" + re.escape(end), lambda _m: block.rstrip("\n"), text, flags=re.S)
-    elif len(text.strip()) < 120:
-        # 还是初始的占位 README(比如只有一行标题), 直接换成完整说明
-        text = README_INTRO.rstrip() + "\n\n" + block
-    else:
-        text = text.rstrip() + "\n\n" + block
+def read_conf(path):
+    """读回一份已生成的 .conf，返回 (规则行, 域名集合)。合集就是靠它拼的。"""
+    rules, hosts = [], set()
+    if not os.path.isfile(path):
+        return rules, hosts
+    section = ""
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                section = stripped.strip("[]").lower()
+                continue
+            if not stripped or stripped.startswith("#"):
+                continue
+            if section == "rewrite_local" and " url " in stripped:
+                if stripped not in rules:
+                    rules.append(stripped)
+            elif section == "mitm":
+                found = re.match(r"^hostname\s*=\s*(.+)$", stripped, re.I)
+                if found:
+                    value = re.sub(r"^%APPEND%\s*", "", found.group(1), flags=re.I)
+                    hosts |= {item.strip() for item in re.split(r"[,\s]+", value) if item.strip()}
+    return rules, hosts
+
+
+def build_allinone(entries):
+    """entries: [(中文名, 文件名, 规则列表, 域名集合), ...]"""
+    lines = ["[general]", "", "[rewrite_local]"]
+    seen, all_hosts, total = set(), set(), 0
+    for cn_name, filename, rules, hosts in entries:
+        fresh = [rule for rule in rules if rule not in seen]
+        if not fresh:
+            continue
+        lines.append(f"# ===== {cn_name}（{filename}）=====")
+        for rule in fresh:
+            seen.add(rule)
+            lines.append(rule)
+            total += 1
+        lines.append("")
+        all_hosts |= hosts
+    lines.append("[mitm]")
+    prefix = "%APPEND% " if MITM_APPEND else ""
+    lines.append(f"hostname = {prefix}" + ", ".join(sorted(all_hosts)))
+    return "\n".join(lines) + "\n", total
+
+
+def update_readme(urls, notes):
+    """仅当 WRITE_README = True 时调用；README 会被整份覆盖, 手改无效。"""
+    text = README_INTRO.rstrip() + "\n"
+    if urls:
+        text += "\n```\n" + "\n".join(urls) + "\n```\n"
+    if notes:
+        text += "\n" + "\n".join(notes) + "\n"
     with open("README.md", "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
+    log(f"📝 README.md 已更新（{len(urls)} 条引入地址）")
 
 
 def main():
     log(f"📦 generate_rules.py v{VERSION} · 共 {len(APPS)} 个脚本 · {cn_now():%Y-%m-%d %H:%M}")
     log()
     os.makedirs(CONF_DIR, exist_ok=True)
-    rows, failed = [], []
-    for name, raw_url in APPS.items():
+    urls, notes, failed = [], [], []
+    for key, (cn_name, raw_url) in APPS.items():
         url = decode_link(raw_url)
-        filename = f"{name}.conf"
+        filename = f"{key}.conf"
         path = os.path.join(CONF_DIR, filename)
         try:
             text, ua = fetch(url)
@@ -435,25 +463,40 @@ def main():
             note = f"UA={ua}"
         except Exception as exc:  # noqa: BLE001
             rules, hosts, note = [], set(), f"抓取失败: {exc}"
-            log(f"⚠️  [{name}] {note}")
-        rules = list(rules) + [r for r in EXTRA_RULES.get(name, []) if r not in rules]
-        hosts |= set(EXTRA_HOSTS.get(name, []))
+            log(f"⚠️  [{cn_name}] {note}")
+        rules = list(rules) + [r for r in EXTRA_RULES.get(key, []) if r not in rules]
+        hosts |= set(EXTRA_HOSTS.get(key, []))
 
-        remote = f"{REPO_RAW}/{CONF_DIR}/{urllib.parse.quote(filename)}" if REPO_RAW else url
+        urls.append(f"{REPO_RAW}/{CONF_DIR}/{urllib.parse.quote(filename)}" if REPO_RAW else url)
         if not rules:
             if KEEP_LAST_GOOD and conf_has_rules(path):
-                log(f"🛡️  [{name}] 本次没抓到规则, 保留已有的 {CONF_DIR}/{filename}")
-                rows.append(f"| {filename} | 保留上次结果 | — | — | {remote} |")
+                log(f"🛡️  [{cn_name}] 本次没抓到规则, 保留已有的 {CONF_DIR}/{filename}")
+                notes.append(f"⚠️ {cn_name}（{filename}）本次抓取失败，已保留上次生成的配置")
                 continue
-            failed.append(name)
+            failed.append(cn_name)
+            notes.append(f"⚠️ {cn_name}（{filename}）这次没抓到任何规则")
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(build_conf(name, url, rules, hosts, note if not rules else ""))
-        log(f"✨ [{name}] {len(rules)} 条规则 · {len(hosts)} 个域名 · {note}")
-        rows.append(f"| {filename} | {'正常' if rules else '无规则'} | {len(rules)} | "
-                    f"{len(hosts)} 个 | {remote} |")
+            fh.write(build_conf(cn_name, url, rules, hosts, note if not rules else ""))
+        log(f"✨ [{cn_name}] {filename} · {len(rules)} 条规则 · {len(hosts)} 个域名 · {note}")
 
-    clean_stale({f"{name}.conf" for name in APPS})
-    update_readme(rows)
+    keep = {f"{key}.conf" for key in APPS}
+    if MAKE_ALLINONE:
+        entries = []
+        for key, (cn_name, _unused) in APPS.items():
+            filename = f"{key}.conf"
+            rules, hosts = read_conf(os.path.join(CONF_DIR, filename))
+            entries.append((cn_name, filename, rules, hosts))
+        content, total = build_allinone(entries)
+        allinone = f"{ALLINONE_FILE}.conf"
+        with open(os.path.join(CONF_DIR, allinone), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(content)
+        keep.add(allinone)
+        log(f"📚 合集 {CONF_DIR}/{allinone} · {len(entries)} 个脚本 · 去重后 {total} 条规则")
+        if REPO_RAW:
+            urls.insert(0, f"{REPO_RAW}/{CONF_DIR}/{allinone}")
+    clean_stale(keep)
+    if WRITE_README:
+        update_readme(urls, notes)
     log()
     log(f"🎉 完成：{len(APPS) - len(failed)}/{len(APPS)} 个脚本成功生成 .conf")
     if failed:
@@ -461,7 +504,9 @@ def main():
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as fh:
-            fh.write("## QX-Rules 生成结果\n\n" + "\n".join(rows) + "\n")
+            fh.write(f"## QX-Rules 生成结果\n\n成功 {len(APPS) - len(failed)}/{len(APPS)}\n")
+            for line in notes:
+                fh.write(f"- {line}\n")
     return 0
 
 
