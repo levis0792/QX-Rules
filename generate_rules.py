@@ -82,14 +82,15 @@ app_configs = {
 
 print("📦 开始执行通用万能解包与智能兜底...")
 
-for cn_name, config in app_configs.itemsURL := config["url"]
+for cn_name, config in app_configs.items():
+    target_url = config["url"]
     extracted_rules = []
     hostnames = set(config["hosts"])
     
     try:
-        print(f"正在智能解包 [{cn_name}]: {config['url']}")
+        print(f"正在智能解包 [{cn_name}]: {target_url}")
         req = urllib.request.Request(
-            config['url'], 
+            target_url, 
             headers={"User-Agent": "Quantumult X/1.4.0"}
         )
         with urllib.request.urlopen(req, timeout=15) as response:
@@ -98,14 +99,13 @@ for cn_name, config in app_configs.itemsURL := config["url"]
             for line in content.splitlines():
                 line_str = line.strip()
                 
-                # 🌐 通用万能匹配逻辑：只要行里同时包含 ^https?:// 和 url，不管它带没带 # 注释、或在代码的哪个位置，全都能识别出来
+                # 🌐 通用万能匹配逻辑：识别带有 ^https?:// 和 url 的重写行
                 if "url" in line_str.lower() and "^https?://" in line_str:
-                    # 剥离行首所有的注释符（#）、斜杠（/）和空格
                     clean_rule = re.sub(r'^[#/\s]+', '', line_str)
                     if clean_rule.startswith("^https?://") and clean_rule not in extracted_rules:
                         extracted_rules.append(clean_rule)
                 
-                # 自动从文本中提取更多潜在的 hostname
+                # 自动提取 hostname
                 if 'hostname' in line_str.lower():
                     found_hosts = re.findall(r'([a-zA-Z0-9\-\*]+\.[a-zA-Z0-9\-\.]+)', line_str)
                     for h in found_hosts:
@@ -115,7 +115,7 @@ for cn_name, config in app_configs.itemsURL := config["url"]
     except Exception as e:
         print(f"⚠️ [{cn_name}] 远程抓取遇到阻碍: {e}")
 
-    # 💡 智能合并：如果远程成功解包出了规则，就用远程的；如果远程没抓到或部分漏掉，自动用高质量兜底规则补齐，确保完美生效
+    # 💡 智能合并：在线解包成功则用在线的，否则无缝切换高质量兜底规则
     final_rules = extracted_rules if extracted_rules else config["fallback_rules"]
     if extracted_rules:
         print(f"✅ [{cn_name}] 成功在线解包提取到 {len(extracted_rules)} 条规则")
