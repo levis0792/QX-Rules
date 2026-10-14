@@ -82,6 +82,19 @@ EXTRA_RULES = {
     "12306-adblock": [
         r"^https?://ad\.12306\.cn/ad/wx/home.* url reject-200",
     ],
+    # 酷我：脚本头部没覆盖到的广告/推广/统计域名，取自自动更新的规则库
+    # (Cats-Team/AdRules 的 qx.conf: host-suffix,xxx.kuwo.cn,reject)，整域拦截，不依赖具体路径
+    "kuwo-adblock": [
+        r"^https?://deliver\.kuwo\.cn/ url reject-200",
+        r"^https?://g\.kuwo\.cn/ url reject-200",
+        r"^https?://kwmsg\.kuwo\.cn/ url reject-200",
+        r"^https?://log\.kuwo\.cn/ url reject-200",
+        r"^https?://msclick2\.kuwo\.cn/ url reject-200",
+        r"^https?://msphoneclick\.kuwo\.cn/ url reject-200",
+        r"^https?://updatepage\.kuwo\.cn/ url reject-200",
+        r"^https?://wa\.kuwo\.cn/ url reject-200",
+        r"^https?://webstat\.kuwo\.cn/ url reject-200",
+    ],
 }
 
 # ===========================================================================
