@@ -2,85 +2,115 @@ import os
 import re
 import urllib.request
 
-# 🎯 对应关系：中文文件名 -> 目标脚本直链
-target_scripts = {
-    "Nicegram高级版": "https://ddgksf2013.top/scripts/nicegram.vip.js",
-    "RevenueCat多合一": "https://ddgksf2013.top/scripts/revenuecat.vip.js",
-    "BuyiTunes多合一": "https://ddgksf2013.top/scripts/buyitunes.vip.js",
-    "Goodbility会员": "https://ddgksf2013.top/scripts/goodbility.vip.js",
-    "百度网盘去广告": "https://ddgksf2013.top/scripts/bdpan.ads.js",
-    "Pixiv去广告": "https://github.com/ddgksf2013/Scripts/raw/master/pixivAds.js",
-    "酷安去广告": "https://github.com/ddgksf2013/Scripts/raw/master/coolapk.js",
-    "12306去广告": "https://github.com/ddgksf2013/Scripts/raw/master/12306.js",
-    "知乎去广告": "https://ddgksf2013.top/scripts/zhihu.ads.js",
-    "酷我音乐去广告": "https://ddgksf2013.top/scripts/kkmusic.vip.js"
+# 🎯 预设所有应用的默认兜底规则和 MitM 域名（确保离线或超时也能 100% 生成文件）
+app_presets = {
+    "酷我音乐去广告": {
+        "url": "https://ddgksf2013.top/scripts/kkmusic.vip.js",
+        "rules": [
+            "^https?://.*kuwo\\.cn/star/upload/95/25/1764662243747_\\.png url reject-200",
+            "^https?://searchrecterm\\.kuwo\\.cn/recterm\\.s url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js",
+            "^https?://appi\\.kuwo\\.cn/kuwopay/vip-tab/page/cells url script-response-body https://ddgksf2013.top/scripts/kkmusic.vip.js"
+        ],
+        "hosts": ["*.kuwo.cn", "kuwo.cn", "mc.tencentmusic.com"]
+    },
+    "Nicegram高级版": {
+        "url": "https://ddgksf2013.top/scripts/nicegram.vip.js",
+        "rules": [
+            "^https?://nicegram\\.cloud/api/v\\d\\/(ai-assistant/purchase-list|user/info|telegram/auth) url script-response-body https://ddgksf2013.top/scripts/nicegram.vip.js"
+        ],
+        "hosts": ["nicegram.cloud"]
+    },
+    "RevenueCat多合一": {
+        "url": "https://ddgksf2013.top/scripts/revenuecat.vip.js",
+        "rules": [
+            "^https?://(api\\.revenuecat\\.com|rc-pvt\\..*)/v\\d\\/(subscribers|receipts) url script-response-body https://ddgksf2013.top/scripts/revenuecat.vip.js"
+        ],
+        "hosts": ["api.revenuecat.com", "rc-pvt.acinfo.org"]
+    },
+    "BuyiTunes多合一": {
+        "url": "https://ddgksf2013.top/scripts/buyitunes.vip.js",
+        "rules": [
+            "^https?://(buy\\.itunes\\.apple\\.com|sandbox\\.itunes\\.apple\\.com)/verifyReceipt url script-response-body https://ddgksf2013.top/scripts/buyitunes.vip.js"
+        ],
+        "hosts": ["buy.itunes.apple.com", "sandbox.itunes.apple.com"]
+    },
+    "Goodbility会员": {
+        "url": "https://ddgksf2013.top/scripts/goodbility.vip.js",
+        "rules": [
+            "^https?://.*goodbility.* url script-response-body https://ddgksf2013.top/scripts/goodbility.vip.js"
+        ],
+        "hosts": ["*.goodnotes.com", "notability.com"]
+    },
+    "百度网盘去广告": {
+        "url": "https://ddgksf2013.top/scripts/bdpan.ads.js",
+        "rules": [
+            "^https?://pan\\.baidu\\.com/act/sapi/promotion/vip.* url reject-200"
+        ],
+        "hosts": ["pan.baidu.com", "baidubce.com"]
+    },
+    "Pixiv去广告": {
+        "url": "https://github.com/ddgksf2013/Scripts/raw/master/pixivAds.js",
+        "rules": [
+            "^https?://app-api\\.pixiv\\.net/v\\d/user/recommend url reject-200"
+        ],
+        "hosts": ["*.pixiv.net", "app-api.pixiv.net"]
+    },
+    "酷安去广告": {
+        "url": "https://github.com/ddgksf2013/Scripts/raw/master/coolapk.js",
+        "rules": [
+            "^https?://api\\.coolapk\\.com/v6/main/init.* url script-response-body https://github.com/ddgksf2013/Scripts/raw/master/coolapk.js"
+        ],
+        "hosts": ["api.coolapk.com", "coolapk.com"]
+    },
+    "12306去广告": {
+        "url": "https://github.com/ddgksf2013/Scripts/raw/master/12306.js",
+        "rules": [
+            "^https?://ad\\.12306\\.cn/ad/wx/home.* url reject-200"
+        ],
+        "hosts": ["*.12306.cn", "mobile.12306.cn"]
+    },
+    "知乎去广告": {
+        "url": "https://ddgksf2013.top/scripts/zhihu.ads.js",
+        "rules": [
+            "^https?://.*zhihu\\.com/api/v\\d/topstory/recommend.* url reject-200"
+        ],
+        "hosts": ["*.zhihu.com", "zhihu.com"]
+    }
 }
 
-print("📦 开始执行中文命名多文件独立远程解包...")
+print("📦 开始生成中文配置文件...")
 
-for cn_name, url in target_scripts.items():
-    rewrite_rules = []
-    hostnames = set()
+for cn_name, data in app_presets.items():
+    rewrite_rules = list(data["rules"])
+    hostnames = set(data["hosts"])
     
+    # 尝试联网去远程抓取更新
     try:
-        print(f"正在解包 [{cn_name}]: {url}")
-        req = urllib.request.Request(
-            url, 
-            headers={"User-Agent": "Quantumult X/1.4.0"}
-        )
-        with urllib.request.urlopen(req, timeout=12) as response:
+        print(f"正在尝试联网更新 [{cn_name}]: {data['url']}")
+        req = urllib.request.Request(data["url"], headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as response:
             content = response.read().decode('utf-8', errors='ignore')
-            
+            remote_rules = []
             for line in content.splitlines():
                 line_str = line.strip()
-                # 匹配重写/拒绝/脚本规则
-                if re.search(r'\^https?://.*url\s+(script|reject|demux|dns|resp)', line_str, re.IGNORECASE):
+                if line_str.startswith("^https?://") and "url" in line_str.lower():
                     clean_rule = re.sub(r'^[#/\s]+', '', line_str)
-                    if clean_rule and clean_rule not in rewrite_rules:
-                        rewrite_rules.append(clean_rule)
-                
-                # 提取 hostname
-                if 'hostname' in line_str.lower():
-                    found_hosts = re.findall(r'([a-zA-Z0-9\-\*]+\.[a-zA-Z0-9\-\.]+)', line_str)
-                    for h in found_hosts:
-                        if len(h) > 3 and '.' in h and 'github' not in h and 'ddgksf2013' not in h:
-                            hostnames.add(h)
-                            
+                    if clean_rule and clean_rule not in remote_rules:
+                        remote_rules.append(clean_rule)
+            if remote_rules:
+                rewrite_rules = remote_rules
+                print(f"✅ [{cn_name}] 成功从远程抓取到 {len(remote_rules)} 条规则")
     except Exception as e:
-        print(f"❌ 解包失败 [{cn_name}]: {e}")
-        continue
+        print(f"⚠️ [{cn_name}] 联网更新跳过，使用本地内置规则: {e}")
 
-    # 如果没提取到规则，跳过
-    if not rewrite_rules:
-        continue
-
-    # 针对不同 App 自动补充专属基础 MitM 域名
-    if "酷我" in cn_name:
-        hostnames.update(["*.kuwo.cn", "kuwo.cn", "mc.tencentmusic.com"])
-    elif "Nicegram" in cn_name:
-        hostnames.add("nicegram.cloud")
-    elif "RevenueCat" in cn_name or "BuyiTunes" in cn_name:
-        hostnames.update(["api.revenuecat.com", "rc-pvt.acinfo.org", "buy.itunes.apple.com", "sandbox.itunes.apple.com"])
-    elif "百度网盘" in cn_name:
-        hostnames.update(["pan.baidu.com", "baidubce.com"])
-    elif "Pixiv" in cn_name:
-        hostnames.update(["*.pixiv.net", "app-api.pixiv.net"])
-    elif "酷安" in cn_name:
-        hostnames.update(["api.coolapk.com", "coolapk.com"])
-    elif "12306" in cn_name:
-        hostnames.update(["*.12306.cn", "mobile.12306.cn"])
-    elif "知乎" in cn_name:
-        hostnames.update(["*.zhihu.com", "zhihu.com"])
-
-    # 组装独立的 .conf 内容
+    # 组装配置文件
     conf_content = f"[general]\n\n[rewrite_local]\n" + "\n".join(rewrite_rules)
     if hostnames:
         conf_content += f"\n\n[mitm]\nhostname = " + ", ".join(sorted(list(hostnames))) + "\n"
 
-    # 使用你给的中文名保存为配置文件（如 酷我音乐去广告.conf）
     filename = f"{cn_name}.conf"
     with open(filename, "w", encoding="utf-8") as f:
         f.write(conf_content)
-    print(f"✨ 已成功生成独立配置文件: {filename}")
+    print(f"✨ 已成功写入: {filename}")
 
-print("🎉 所有中文命名配置文件解包生成完毕！")
+print("🎉 所有配置文件生成完毕！")
