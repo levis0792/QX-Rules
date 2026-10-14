@@ -348,7 +348,8 @@ def build_conf(name, url, rules, hosts, extra_note=""):
         if extra_note:
             lines.append(f"# 备注：{extra_note}")
         lines += ["# " + "=" * 60, ""]
-    lines += ["[general]", "", "[rewrite_local]"]
+    # 注意：远程重写资源里不能出现 [general]，否则 QX 会报 invalid [general]
+    lines += ["[rewrite_local]"]
     lines += rules
     lines += ["", "[mitm]"]
     prefix = "%APPEND% " if MITM_APPEND else ""
@@ -417,7 +418,7 @@ def read_conf(path):
 
 def build_allinone(entries):
     """entries: [(中文名, 文件名, 规则列表, 域名集合), ...]"""
-    lines = ["[general]", "", "[rewrite_local]"]
+    lines = ["[rewrite_local]"]  # 远程重写资源不能有 [general]
     seen, all_hosts, total = set(), set(), 0
     for cn_name, filename, rules, hosts in entries:
         fresh = [rule for rule in rules if rule not in seen]
