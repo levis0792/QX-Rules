@@ -122,7 +122,9 @@ WRITE_README = False  # False: 脚本完全不碰 README.md（你想写什么就
 # ---- 忠实模式（默认）：.conf 的内容 = 脚本头部原样，不加规则、不加域名、不改顺序 ----
 KEEP_EXTRA = False      # True: 才把上面的 EXTRA_HOSTS / EXTRA_RULES 并进结果
 DERIVE_HOSTS = True     # 仅当脚本自己没写 [mitm] 时，才由规则反推域名补上
-OUTPUT_SECTIONS = True  # 生成 [rewrite_local] / [mitm] 段头，和脚本头部结构一致，方便逐行对照
+# QX 的"重写引用"资源里不要写 [rewrite_local] / [mitm] 段头（实测引用时会报错），
+# 正确写法是"裸规则 + 一行 hostname = ..."。想改回带段头的写法就把这里改成 True。
+OUTPUT_SECTIONS = False
 USE_CACHE_WHEN_OFFLINE = True  # 联网失败时改用 .cache/<key>.js（本地断网也能重新生成）
 OFFLINE = bool(os.environ.get("QX_OFFLINE")) or "--offline" in sys.argv  # 完全不联网, 只读 .cache
 
