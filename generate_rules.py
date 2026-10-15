@@ -62,6 +62,7 @@ APPS = {
     "pipixia-adblock":  ("皮皮虾去广告", "https://gist.githubusercontent.com/ddgksf2013/bb1dadbd32f67c68772caebcc70b0a33/raw/pipixia.adblock.js"),
     "mgtv-adblock":     ("芒果VIP", "https://github.com/Moli-X/Resources/raw/main/Rewrite/MgTV.conf"),
     "meitu-vip":        ("美图秀秀VIP+粉钻", "https://github.com/Moli-X/Resources/raw/main/Rewrite/MTxiuxiu.conf"),
+    "camscanner-vip":   ("扫描全能王VIP", "https://raw.githubusercontent.com/89996462/Quantumult-X/main/ycdz/smqnw.js"),
 }
 
 # ===========================================================================
