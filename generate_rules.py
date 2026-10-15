@@ -126,9 +126,10 @@ OUTPUT_SECTIONS = True  # 生成 [rewrite_local] / [mitm] 段头，和脚本头�
 USE_CACHE_WHEN_OFFLINE = True  # 联网失败时改用 .cache/<key>.js（本地断网也能重新生成）
 OFFLINE = bool(os.environ.get("QX_OFFLINE")) or "--offline" in sys.argv  # 完全不联网, 只读 .cache
 
-# 引用多份 conf 时，plain "hostname =" 会互相覆盖（最后引用的那份赢，其它脚本就没 MITM 了）。
-# 所以远程资源统一写成 %APPEND%。想完全照抄脚本里那行，把这里改成 False。
-MITM_APPEND = True
+# [mitm] 那行：默认**原样照抄脚本里写的 hostname 行**（连空格都照抄）。
+# 想改成统一格式 "hostname = %APPEND% 域名..."（追加而不是覆盖）就把 VERBATIM_HOSTNAME 改 False。
+VERBATIM_HOSTNAME = True
+MITM_APPEND = False  # 仅在 VERBATIM_HOSTNAME = False 时才用到
 
 # 生成的 .conf 统一放这个文件夹里, 文件夹内只会出现生成的 .conf, 不掺别的东西
 CONF_DIR = "conf"
@@ -401,16 +402,21 @@ def parse_script(text):
     # 域名一律照抄脚本 [mitm] 里写的（原顺序、原写法，不排序、不补域名）。
     # 只有脚本自己压根没写 [mitm] 时，才退回"从规则反推"，否则脚本没写的域名不会出现。
     declared = []
+    hostname_line = ""
     for line in sections.get("mitm", []):
         found = re.match(r"^hostname\s*=\s*(?P<value>.+)$", line.strip(), re.I)
         if not found:
             continue
+        if not hostname_line:
+            hostname_line = line.strip()  # 原样留着（连空格一起照抄）
         for item in hosts_from_value_ordered(found.group("value")):
             if item not in declared:
                 declared.append(item)
     for line in text.splitlines():  # 裸格式里的 hostname 行
         found = re.match(r"^\s*hostname\s*=\s*(?P<value>.+)$", line, re.I)
         if found:
+            if not hostname_line:
+                hostname_line = line.strip()
             for item in hosts_from_value_ordered(found.group("value")):
                 if item not in declared:
                     declared.append(item)
@@ -421,17 +427,18 @@ def parse_script(text):
         hosts, hosts_declared = derived, False  # 脚本没写 [mitm]，只能从规则反推
     else:
         hosts, hosts_declared = [], False
-    return rules, hosts, sections, hosts_declared
+    return rules, hosts, sections, hosts_declared, hostname_line
 
 
 # ---------------------------------------------------------------------------
 # 生成 .conf
 # ---------------------------------------------------------------------------
-def build_conf(name, url, rules, hosts, extra_note=""):
+def build_conf(name, url, rules, hosts, extra_note="", hostname_line=""):
     """
     忠实模式：正文 = 脚本头部原样（规则照抄、域名照抄原顺序）。
     结构用 [rewrite_local] + [mitm] 段头，和脚本头部、QX 官方
     sample-import-rewrite.snippet 一样，方便拿源脚本逐行核对。
+    [mitm] 那一行优先用 hostname_line（脚本里原样的那行），没有才自己拼。
     """
     lines = []
     if ADD_HEADER:
@@ -450,8 +457,11 @@ def build_conf(name, url, rules, hosts, extra_note=""):
     lines.append("")
     if OUTPUT_SECTIONS:
         lines += ["[mitm]", ""]
-    prefix = "%APPEND% " if MITM_APPEND else ""
-    lines.append(f"hostname = {prefix}" + ", ".join(hosts))
+    if VERBATIM_HOSTNAME and hostname_line:
+        lines.append(hostname_line)
+    else:
+        prefix = "%APPEND% " if MITM_APPEND else ""
+        lines.append(f"hostname = {prefix}" + ", ".join(hosts))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -527,6 +537,30 @@ def clean_stale(keep):
                 pass
 
 
+def clean_nested_conf_dir():
+    """
+    清掉 conf/conf/ 这种"套娃"重复目录（多半是网页上传时选错目录留下的），
+    免得 QX 引用到里面那份旧配置。只有当里面全是 .conf 时才动它。
+    """
+    outer = os.path.abspath(CONF_DIR)
+    nested = os.path.abspath(os.path.join(CONF_DIR, "conf"))
+    if nested == outer or not nested.startswith(outer + os.sep) or not os.path.isdir(nested):
+        return
+    entries = sorted(os.listdir(nested))
+    if not entries or not all(e.lower().endswith(".conf") for e in entries):
+        return  # 里面还掺着别的东西，就不碰
+    for entry in entries:
+        try:
+            os.remove(os.path.join(nested, entry))
+        except OSError:
+            pass
+    try:
+        os.rmdir(nested)
+        log(f"🧹 清掉重复的 {CONF_DIR}/conf/（{len(entries)} 个旧 .conf）")
+    except OSError:
+        pass
+
+
 def read_conf(path):
     """读回一份已生成的 .conf，返回 (规则行, 域名列表)。合集就是靠它拼的。"""
     rules, hosts = [], []
@@ -600,15 +634,16 @@ def main():
         path = os.path.join(CONF_DIR, filename)
         try:
             text, note = lookup_script(key, url)
-            rules, hosts, _sections, hosts_declared = parse_script(text)
+            rules, hosts, _sections, hosts_declared, hostname_line = parse_script(text)
         except Exception as exc:  # noqa: BLE001
-            rules, hosts, hosts_declared, note = [], [], True, f"抓取失败: {exc}"
+            rules, hosts, hosts_declared, hostname_line, note = [], [], True, "", f"抓取失败: {exc}"
             log(f"⚠️  [{cn_name}] {note}")
         if KEEP_EXTRA:  # 补充模式（默认关）：才把 EXTRA_RULES / EXTRA_HOSTS 并进来
             rules = list(rules) + [r for r in EXTRA_RULES.get(key, []) if r not in rules]
             for host in EXTRA_HOSTS.get(key, []):
                 if host not in hosts:
                     hosts.append(host)
+            hostname_line = ""  # 域名被改过, 就不能再照抄脚本那行了
 
         conf_note = note if not rules else ""
         if hosts and not hosts_declared:
@@ -622,7 +657,7 @@ def main():
             failed.append(cn_name)
             notes.append(f"⚠️ {cn_name}（{filename}）这次没抓到任何规则")
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(build_conf(cn_name, url, rules, hosts, conf_note))
+            fh.write(build_conf(cn_name, url, rules, hosts, conf_note, hostname_line))
         log(f"✨ [{cn_name}] {filename} · {len(rules)} 条规则 · {len(hosts)} 个域名 · {note}")
 
     keep = {f"{key}.conf" for key in APPS}
@@ -641,6 +676,7 @@ def main():
         if REPO_RAW:
             urls.insert(0, f"{REPO_RAW}/{CONF_DIR}/{allinone}")
     clean_stale(keep)
+    clean_nested_conf_dir()
     if WRITE_README:
         update_readme(urls, notes)
     log()
