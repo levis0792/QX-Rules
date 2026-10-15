@@ -6,6 +6,11 @@ QX-Rules · 把 QX 脚本自动"解包"成中文 .conf
 原理：这些脚本的**头部注释块里本来就写好了 [rewrite_local] 和 [mitm]**。
       本脚本抓取脚本 → 解析头部 → 生成标准的 QuantumultX 远程重写资源。
 
+重要：默认是**忠实模式** —— 生成出来的 .conf 就是脚本头部的原样搬运：
+      规则一条不多一条不少、域名照抄脚本 [mitm] 那一行（连顺序都一样），
+      脚本里没写的东西（补规则、补域名、排序）一律不出现，方便和源脚本逐行对照。
+      想恢复"补充模式"，把下面的 KEEP_EXTRA 改成 True。
+
 相比旧版的几处关键改进：
   1. 站点按 User-Agent 分发内容。浏览器/curl 会被 302 跳回首页(看起来像链接失效)，
      这里按 Quantumult X → Loon → Shadowrocket → Surge → 浏览器 依次重试。
@@ -35,7 +40,7 @@ import urllib.request
 import zlib
 from datetime import datetime, timedelta, timezone
 
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 
 # ===========================================================================
 # ① 要转换的脚本
@@ -58,7 +63,9 @@ APPS = {
 }
 
 # ===========================================================================
-# ② 你原来手写的 [mitm] 域名：脚本头部里没有的会被保留下来
+# ② 【默认不生效】补充模式用的表：把脚本头部里没有的域名 / 规则并进生成结果。
+#    忠实模式(KEEP_EXTRA = False，默认)完全忽略这两张表 —— 生成出来的 .conf
+#    就是脚本头部的原样搬运，脚本里没写的东西一个字都不会出现。
 # ===========================================================================
 EXTRA_HOSTS = {
     "kuwo-adblock": ["kuwo.cn"],
@@ -73,7 +80,7 @@ EXTRA_HOSTS = {
 }
 
 # ===========================================================================
-# ③ 你原来手写的重写规则：脚本头部里没有的会被保留下来
+# ②-2 【默认不生效】见上：想恢复"补规则"，把 KEEP_EXTRA 改成 True
 # ===========================================================================
 EXTRA_RULES = {
     "pixiv-adblock": [
@@ -109,12 +116,24 @@ EXTRA_RULES = {
 # 文件顶部加几行 # 注释(名称/脚本/更新时间/规则数)。QX 认 # 注释,
 # 主流规则库(blackmatrix7)也这么写; 英文文件名看不出内容, 靠这里认。
 ADD_HEADER = True
-MITM_APPEND = False  # True: 生成 "hostname = %APPEND% ..."（远程资源想追加而不是覆盖时用）
 KEEP_LAST_GOOD = True  # 抓取失败时保留上一次生成的文件
 WRITE_README = False  # False: 脚本完全不碰 README.md（你想写什么就写什么，不会被覆盖）
 
+# ---- 忠实模式（默认）：.conf 的内容 = 脚本头部原样，不加规则、不加域名、不改顺序 ----
+KEEP_EXTRA = False      # True: 才把上面的 EXTRA_HOSTS / EXTRA_RULES 并进结果
+DERIVE_HOSTS = True     # 仅当脚本自己没写 [mitm] 时，才由规则反推域名补上
+OUTPUT_SECTIONS = True  # 生成 [rewrite_local] / [mitm] 段头，和脚本头部结构一致，方便逐行对照
+USE_CACHE_WHEN_OFFLINE = True  # 联网失败时改用 .cache/<key>.js（本地断网也能重新生成）
+OFFLINE = bool(os.environ.get("QX_OFFLINE")) or "--offline" in sys.argv  # 完全不联网, 只读 .cache
+
+# 引用多份 conf 时，plain "hostname =" 会互相覆盖（最后引用的那份赢，其它脚本就没 MITM 了）。
+# 所以远程资源统一写成 %APPEND%。想完全照抄脚本里那行，把这里改成 False。
+MITM_APPEND = True
+
 # 生成的 .conf 统一放这个文件夹里, 文件夹内只会出现生成的 .conf, 不掺别的东西
 CONF_DIR = "conf"
+# 抓到的脚本原文留一份到这里, 断网/被抓站拦下时用它重新生成（.gitignore 里已忽略, 不会提交）
+CACHE_DIR = ".cache"
 # 老版本在仓库根目录生成的同名 .conf: 新位置生成成功后自动删掉, 免得两处重复
 CLEAN_LEGACY_ROOT_CONFS = True
 
@@ -260,6 +279,17 @@ def hosts_from_value(value):
     return {item.strip() for item in re.split(r"[,\s]+", value) if item.strip()}
 
 
+def hosts_from_value_ordered(value):
+    """按脚本里写的原样/原顺序返回域名列表（只去空、去重，不排序、不增删）。"""
+    value = re.sub(r"^%APPEND%\s*", "", value, flags=re.I)
+    out = []
+    for item in re.split(r"[,\s]+", value):
+        item = item.strip().strip(".")
+        if item and item not in out:
+            out.append(item)
+    return out
+
+
 def split_sections(comment):
     """把 /* ... */ 头部注释拆成 {段名: [规则行]}；[Script] 视同 [rewrite_local]。"""
     sections = {}
@@ -354,7 +384,7 @@ def parse_script(text):
         if bare:
             sections["rewrite_local"] = bare
 
-    rules, hosts = [], set()
+    rules, derived = [], []
     for name in ("rewrite_local", "rewrite_remote"):
         for line in sections.get(name, []):
             rule = line.strip()
@@ -365,19 +395,33 @@ def parse_script(text):
             if rule not in rules:
                 rules.append(rule)
             host = host_from_pattern(rule.split()[0])
-            if host:
-                hosts.add(host)
+            if host and host not in derived:
+                derived.append(host)
 
+    # 域名一律照抄脚本 [mitm] 里写的（原顺序、原写法，不排序、不补域名）。
+    # 只有脚本自己压根没写 [mitm] 时，才退回"从规则反推"，否则脚本没写的域名不会出现。
+    declared = []
     for line in sections.get("mitm", []):
         found = re.match(r"^hostname\s*=\s*(?P<value>.+)$", line.strip(), re.I)
         if not found:
             continue
-        hosts |= {item.strip().strip(".") for item in hosts_from_value(found.group("value"))}
+        for item in hosts_from_value_ordered(found.group("value")):
+            if item not in declared:
+                declared.append(item)
     for line in text.splitlines():  # 裸格式里的 hostname 行
         found = re.match(r"^\s*hostname\s*=\s*(?P<value>.+)$", line, re.I)
         if found:
-            hosts |= {item.strip().strip(".") for item in hosts_from_value(found.group("value"))}
-    return rules, hosts, sections
+            for item in hosts_from_value_ordered(found.group("value")):
+                if item not in declared:
+                    declared.append(item)
+
+    if declared:
+        hosts, hosts_declared = declared, True
+    elif DERIVE_HOSTS:
+        hosts, hosts_declared = derived, False  # 脚本没写 [mitm]，只能从规则反推
+    else:
+        hosts, hosts_declared = [], False
+    return rules, hosts, sections, hosts_declared
 
 
 # ---------------------------------------------------------------------------
@@ -385,9 +429,9 @@ def parse_script(text):
 # ---------------------------------------------------------------------------
 def build_conf(name, url, rules, hosts, extra_note=""):
     """
-    远程重写资源文件里不能有 [general] / [rewrite_local] / [mitm] 段头,
-    只能是"裸规则 + 一行 hostname = ..."。参照 QX 官方 sample-import-rewrite.snippet
-    和 blackmatrix7/ios_rule_script 的 QuantumultX/Advertising.conf。
+    忠实模式：正文 = 脚本头部原样（规则照抄、域名照抄原顺序）。
+    结构用 [rewrite_local] + [mitm] 段头，和脚本头部、QX 官方
+    sample-import-rewrite.snippet 一样，方便拿源脚本逐行核对。
     """
     lines = []
     if ADD_HEADER:
@@ -400,10 +444,14 @@ def build_conf(name, url, rules, hosts, extra_note=""):
         if extra_note:
             lines.append(f"# NOTE: {extra_note}")
         lines.append("")
+    if OUTPUT_SECTIONS:
+        lines.append("[rewrite_local]")
     lines += rules
     lines.append("")
+    if OUTPUT_SECTIONS:
+        lines += ["[mitm]", ""]
     prefix = "%APPEND% " if MITM_APPEND else ""
-    lines.append(f"hostname = {prefix}" + ", ".join(sorted(hosts)))
+    lines.append(f"hostname = {prefix}" + ", ".join(hosts))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -416,6 +464,45 @@ def conf_has_rules(path):
     except OSError:
         return False
     return any(ln.strip() and not ln.strip().startswith("#") and " url " in ln for ln in text.splitlines())
+
+
+def cache_path(key):
+    return os.path.join(CACHE_DIR, f"{key}.js")
+
+
+def save_cache(key, text):
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(cache_path(key), "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+    except OSError:
+        pass
+
+
+def load_cache(key):
+    try:
+        with open(cache_path(key), "r", encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def lookup_script(key, url):
+    """返回 (脚本原文, 说明)。离线模式直接读缓存；联网失败也退回缓存。"""
+    if OFFLINE:
+        cached = load_cache(key)
+        if cached:
+            return cached, "离线模式: 用本地 .cache 里的脚本"
+        raise RuntimeError("离线模式, 且 .cache 里没有这份脚本")
+    try:
+        text, ua = fetch(url)
+        save_cache(key, text)
+        return text, f"UA={ua}"
+    except Exception as exc:  # noqa: BLE001
+        cached = load_cache(key) if USE_CACHE_WHEN_OFFLINE else ""
+        if cached:
+            return cached, f"联网失败({type(exc).__name__}) → 用本地缓存"
+        raise
 
 
 def clean_stale(keep):
@@ -441,8 +528,8 @@ def clean_stale(keep):
 
 
 def read_conf(path):
-    """读回一份已生成的 .conf，返回 (规则行, 域名集合)。合集就是靠它拼的。"""
-    rules, hosts = [], set()
+    """读回一份已生成的 .conf，返回 (规则行, 域名列表)。合集就是靠它拼的。"""
+    rules, hosts = [], []
     if not os.path.isfile(path):
         return rules, hosts
     with open(path, "r", encoding="utf-8") as fh:
@@ -450,19 +537,24 @@ def read_conf(path):
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
+            if RE_SECTION.match(stripped):  # 跳过 [rewrite_local] / [mitm] 段头
+                continue
             found = re.match(r"^hostname\s*=\s*(.+)$", stripped, re.I)
             if found:
-                value = re.sub(r"^%APPEND%\s*", "", found.group(1), flags=re.I)
-                hosts |= {item.strip() for item in re.split(r"[,\s]+", value) if item.strip()}
+                for item in hosts_from_value_ordered(found.group(1)):
+                    if item not in hosts:
+                        hosts.append(item)
             elif " url " in stripped and stripped not in rules:
                 rules.append(stripped)
     return rules, hosts
 
 
 def build_allinone(entries):
-    """entries: [(中文名, 文件名, 规则列表, 域名集合), ...]"""
+    """entries: [(中文名, 文件名, 规则列表, 域名列表), ...]"""
     lines = ["# NAME: allinone（全部脚本合集）", ""]
-    seen, all_hosts, total = set(), set(), 0
+    if OUTPUT_SECTIONS:
+        lines.append("[rewrite_local]")
+    seen, all_hosts, total = set(), [], 0
     for cn_name, filename, rules, hosts in entries:
         fresh = [rule for rule in rules if rule not in seen]
         if not fresh:
@@ -473,9 +565,14 @@ def build_allinone(entries):
             lines.append(rule)
             total += 1
         lines.append("")
-        all_hosts |= hosts
+        for host in hosts:
+            if host not in all_hosts:
+                all_hosts.append(host)
+    if OUTPUT_SECTIONS:
+        lines.append("[mitm]")
+        lines.append("")
     prefix = "%APPEND% " if MITM_APPEND else ""
-    lines.append(f"hostname = {prefix}" + ", ".join(sorted(all_hosts)))
+    lines.append(f"hostname = {prefix}" + ", ".join(all_hosts))
     return "\n".join(lines).rstrip() + "\n", total
 
 
@@ -492,7 +589,8 @@ def update_readme(urls, notes):
 
 
 def main():
-    log(f"📦 generate_rules.py v{VERSION} · 共 {len(APPS)} 个脚本 · {cn_now():%Y-%m-%d %H:%M}")
+    mode = "离线(只读 .cache)" if OFFLINE else ("补充模式" if KEEP_EXTRA else "忠实模式")
+    log(f"📦 generate_rules.py v{VERSION} · {mode} · 共 {len(APPS)} 个脚本 · {cn_now():%Y-%m-%d %H:%M}")
     log()
     os.makedirs(CONF_DIR, exist_ok=True)
     urls, notes, failed = [], [], []
@@ -501,15 +599,20 @@ def main():
         filename = f"{key}.conf"
         path = os.path.join(CONF_DIR, filename)
         try:
-            text, ua = fetch(url)
-            rules, hosts, _ = parse_script(text)
-            note = f"UA={ua}"
+            text, note = lookup_script(key, url)
+            rules, hosts, _sections, hosts_declared = parse_script(text)
         except Exception as exc:  # noqa: BLE001
-            rules, hosts, note = [], set(), f"抓取失败: {exc}"
+            rules, hosts, hosts_declared, note = [], [], True, f"抓取失败: {exc}"
             log(f"⚠️  [{cn_name}] {note}")
-        rules = list(rules) + [r for r in EXTRA_RULES.get(key, []) if r not in rules]
-        hosts |= set(EXTRA_HOSTS.get(key, []))
+        if KEEP_EXTRA:  # 补充模式（默认关）：才把 EXTRA_RULES / EXTRA_HOSTS 并进来
+            rules = list(rules) + [r for r in EXTRA_RULES.get(key, []) if r not in rules]
+            for host in EXTRA_HOSTS.get(key, []):
+                if host not in hosts:
+                    hosts.append(host)
 
+        conf_note = note if not rules else ""
+        if hosts and not hosts_declared:
+            conf_note = (conf_note + "；" if conf_note else "") + "脚本头部没写 [mitm]，域名由规则反推"
         urls.append(f"{REPO_RAW}/{CONF_DIR}/{urllib.parse.quote(filename)}" if REPO_RAW else url)
         if not rules:
             if KEEP_LAST_GOOD and conf_has_rules(path):
@@ -519,7 +622,7 @@ def main():
             failed.append(cn_name)
             notes.append(f"⚠️ {cn_name}（{filename}）这次没抓到任何规则")
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(build_conf(cn_name, url, rules, hosts, note if not rules else ""))
+            fh.write(build_conf(cn_name, url, rules, hosts, conf_note))
         log(f"✨ [{cn_name}] {filename} · {len(rules)} 条规则 · {len(hosts)} 个域名 · {note}")
 
     keep = {f"{key}.conf" for key in APPS}

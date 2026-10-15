@@ -1,0 +1,4 @@
+# 本地/云端跑 generate_rules.py 时留下的脚本原文缓存, 不要提交
+.cache/
+__pycache__/
+*.pyc
