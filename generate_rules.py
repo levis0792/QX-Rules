@@ -437,10 +437,13 @@ def parse_script(text):
 # ---------------------------------------------------------------------------
 def build_conf(name, url, rules, hosts, extra_note="", hostname_line=""):
     """
-    忠实模式：正文 = 脚本头部原样（规则照抄、域名照抄原顺序）。
-    结构用 [rewrite_local] + [mitm] 段头，和脚本头部、QX 官方
-    sample-import-rewrite.snippet 一样，方便拿源脚本逐行核对。
-    [mitm] 那一行优先用 hostname_line（脚本里原样的那行），没有才自己拼。
+    忠实模式：内容 = 脚本头部原样（规则照抄、域名照抄原顺序）。
+    写法对齐 QX 官方示例 sample-import-rewrite.snippet 和 app2smile/rules：
+        # 注释若干行（QX 忽略）
+        hostname = ...      ← 必须写在规则前面
+        规则行...
+    引用资源里**不能**出现 [rewrite_local] / [mitm] 段头，会被 QX 判为格式错误。
+    hostname 那一行优先用 hostname_line（脚本里原样的那行），没有才自己拼。
     """
     lines = []
     if ADD_HEADER:
@@ -452,18 +455,15 @@ def build_conf(name, url, rules, hosts, extra_note="", hostname_line=""):
         ]
         if extra_note:
             lines.append(f"# NOTE: {extra_note}")
-        lines.append("")
-    if OUTPUT_SECTIONS:
-        lines.append("[rewrite_local]")
-    lines += rules
-    lines.append("")
-    if OUTPUT_SECTIONS:
-        lines += ["[mitm]", ""]
     if VERBATIM_HOSTNAME and hostname_line:
-        lines.append(hostname_line)
+        hostname_text = hostname_line
     else:
         prefix = "%APPEND% " if MITM_APPEND else ""
-        lines.append(f"hostname = {prefix}" + ", ".join(hosts))
+        hostname_text = f"hostname = {prefix}" + ", ".join(hosts)
+    if OUTPUT_SECTIONS:
+        lines += ["[rewrite_local]"] + rules + ["", "[mitm]", "", hostname_text]
+    else:
+        lines += [hostname_text] + rules
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -587,28 +587,28 @@ def read_conf(path):
 
 def build_allinone(entries):
     """entries: [(中文名, 文件名, 规则列表, 域名列表), ...]"""
-    lines = ["# NAME: allinone（全部脚本合集）", ""]
-    if OUTPUT_SECTIONS:
-        lines.append("[rewrite_local]")
+    head = ["# NAME: allinone（全部脚本合集）"]
+    body = []
     seen, all_hosts, total = set(), [], 0
     for cn_name, filename, rules, hosts in entries:
         fresh = [rule for rule in rules if rule not in seen]
         if not fresh:
             continue
-        lines.append(f"# ===== {cn_name}（{filename}）=====")
+        body.append(f"# ===== {cn_name}（{filename}）=====")
         for rule in fresh:
             seen.add(rule)
-            lines.append(rule)
+            body.append(rule)
             total += 1
-        lines.append("")
+        body.append("")
         for host in hosts:
             if host not in all_hosts:
                 all_hosts.append(host)
-    if OUTPUT_SECTIONS:
-        lines.append("[mitm]")
-        lines.append("")
     prefix = "%APPEND% " if MITM_APPEND else ""
-    lines.append(f"hostname = {prefix}" + ", ".join(all_hosts))
+    hostname_text = f"hostname = {prefix}" + ", ".join(all_hosts)
+    if OUTPUT_SECTIONS:
+        lines = head + ["", "[rewrite_local]"] + body + ["[mitm]", "", hostname_text]
+    else:
+        lines = head + [hostname_text] + body
     return "\n".join(lines).rstrip() + "\n", total
 
 
