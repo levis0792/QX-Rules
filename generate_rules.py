@@ -136,6 +136,12 @@ OFFLINE = bool(os.environ.get("QX_OFFLINE")) or "--offline" in sys.argv  # 完�
 VERBATIM_HOSTNAME = True
 MITM_APPEND = False  # 仅在 VERBATIM_HOSTNAME = False 时才用到
 
+# 个别来源的 hostname 写法不标准（例如作者写成 "*mgtv.com"，星号后面少个点），
+# QX 校验不过就会报格式错误。这里按 key 覆盖成标准写法（覆盖同一批域名，只是写法标准）。
+HOSTNAME_OVERRIDE = {
+    "mgtv-adblock": "hostname = *.mgtv.com, mgtv.com",
+}
+
 # 生成的 .conf 统一放这个文件夹里, 文件夹内只会出现生成的 .conf, 不掺别的东西
 CONF_DIR = "conf"
 # 抓到的脚本原文留一份到这里, 断网/被抓站拦下时用它重新生成（.gitignore 里已忽略, 不会提交）
@@ -653,6 +659,8 @@ def main():
         conf_note = note if not rules else ""
         if hosts and not hosts_declared:
             conf_note = (conf_note + "；" if conf_note else "") + "脚本头部没写 [mitm]，域名由规则反推"
+        if key in HOSTNAME_OVERRIDE:  # 来源写法不标准时，用标准写法覆盖 hostname 那一行
+            hostname_line = HOSTNAME_OVERRIDE[key]
         urls.append(f"{REPO_RAW}/{CONF_DIR}/{urllib.parse.quote(filename)}" if REPO_RAW else url)
         if not rules:
             if KEEP_LAST_GOOD and conf_has_rules(path):
