@@ -60,6 +60,7 @@ APPS = {
     "goodbility":       ("Goodbility会员", "https://ddgksf2013.top/scripts/goodbility.vip.js"),
     "pixiv-adblock":    ("Pixiv去广告", "https://github.com/ddgksf2013/Scripts/raw/master/pixivAds.js"),
     "pipixia-adblock":  ("皮皮虾去广告", "https://gist.githubusercontent.com/ddgksf2013/bb1dadbd32f67c68772caebcc70b0a33/raw/pipixia.adblock.js"),
+    "mgtv-adblock":     ("芒果TV净化", "https://github.com/Moli-X/Resources/raw/main/Rewrite/MgTV.conf"),
 }
 
 # ===========================================================================
